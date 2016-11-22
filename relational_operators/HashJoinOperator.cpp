@@ -48,6 +48,7 @@
 #include "types/TypedValue.hpp"
 #include "types/containers/ColumnVector.hpp"
 #include "types/containers/ColumnVectorsValueAccessor.hpp"
+#include "utility/EventProfiler.hpp"
 #include "utility/lip_filter/LIPFilterAdaptiveProber.hpp"
 #include "utility/lip_filter/LIPFilterUtil.hpp"
 
@@ -461,6 +462,10 @@ void HashInnerJoinWorkOrder::execute() {
         base_accessor->createSharedTupleIdSequenceAdapterVirtual(*existence_map));
   }
 
+  auto *container = simple_profiler.getContainer();
+  auto *event_hash = container->getEventLine("ProbeHash");
+  event_hash->emplace_back();
+
   PairsOfVectorsJoinedTuplesCollector collector;
   if (join_key_attributes_.size() == 1) {
     hash_table_.getAllFromValueAccessor(
@@ -560,7 +565,6 @@ void HashInnerJoinWorkOrder::execute() {
         });
     }
 
-
     // We also need a temp value accessor to store results of any scalar expressions.
     ColumnVectorsValueAccessor temp_result;
 
@@ -622,6 +626,8 @@ void HashInnerJoinWorkOrder::execute() {
     // of this loop, but that would get messy when combined with partitioning.
     output_destination_->bulkInsertTuplesFromValueAccessors(accessor_attribute_map);
   }
+
+  event_hash->back().endEvent();
 }
 
 void HashSemiJoinWorkOrder::execute() {
