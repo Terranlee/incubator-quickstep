@@ -53,11 +53,11 @@ bool Aggregate::generatePlan(const L::LogicalPtr &logical_input,
   }
 
   std::vector<E::NamedExpressionPtr> grouping_expressions =
-      logical_aggregate->grouping_expressions();
+        logical_aggregate->grouping_expressions();
   std::vector<E::NamedExpressionPtr> aggregate_expressions =
-      E::ToNamedExpressions(logical_aggregate->aggregate_expressions());
+        E::ToNamedExpressions(logical_aggregate->aggregate_expressions());
 
-  P::PhysicalPtr best_input_plan =
+  P::PhysicalPtr  best_input_plan =
       physical_mapper_->createOrGetPhysicalFromLogical(
           logical_aggregate->input());
 

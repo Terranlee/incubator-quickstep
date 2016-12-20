@@ -426,7 +426,7 @@ extern int quickstep_yylex \
 #undef YY_DECL
 #endif
 
-#line 466 "../SqlLexer.lpp"
+#line 470 "../SqlLexer.lpp"
 
 
 #line 432 "SqlLexer_gen.hpp"

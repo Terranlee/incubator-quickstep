@@ -37,7 +37,10 @@
 #include "query_optimizer/logical/NestedLoopsJoin.hpp"
 #include "query_optimizer/logical/PatternMatcher.hpp"
 #include "query_optimizer/logical/Project.hpp"
+#include "query_optimizer/logical/SetOperation.hpp"
+#include "query_optimizer/physical/Aggregate.hpp"
 #include "query_optimizer/physical/HashJoin.hpp"
+#include "query_optimizer/physical/InsertSelection.hpp"
 #include "query_optimizer/physical/NestedLoopsJoin.hpp"
 #include "query_optimizer/physical/PatternMatcher.hpp"
 #include "query_optimizer/physical/Physical.hpp"
@@ -61,6 +64,7 @@ bool Join::generatePlan(const L::LogicalPtr &logical_input,
   L::FilterPtr logical_filter;
   L::HashJoinPtr logical_hash_join;
   L::NestedLoopsJoinPtr logical_nested_loops_join;
+  L::SetOperationPtr logical_set_operation;
 
   // Collapse project-join.
   if (L::SomeProject::MatchesWithConditionalCast(logical_input, &logical_project)) {
@@ -134,6 +138,50 @@ bool Join::generatePlan(const L::LogicalPtr &logical_input,
               logical_nested_loops_join->getOutputAttributes()),
           physical_output);
       return true;
+    }
+  }
+
+  // Convert set operation to hash join operation
+  // INTERSECT is calculated in this way
+  if (L::SomeSetOperation::MatchesWithConditionalCast(logical_input, &logical_set_operation)) {
+    if (logical_set_operation->getSetOperationType() ==  L::SetOperation::kIntersect) {
+      // for intersect operation, map into a hash join operator
+      const std::vector<L::LogicalPtr> &operands = logical_set_operation->getOperands();
+      L::LogicalPtr left = operands.front(), right;
+      if (operands.size() == 2) {
+        right = operands.back();
+      } else {
+        std::vector<L::LogicalPtr> new_operands;
+        for (std::vector<L::LogicalPtr>::size_type opid=1; opid < operands.size(); opid++) {
+          new_operands.push_back(operands[opid]);
+        }
+        right = logical_set_operation->copyWithNewChildren(new_operands);
+      }
+      std::vector<E::NamedExpressionPtr> project_expressions;
+      for (const auto & attribute : left->getOutputAttributes()) {
+        project_expressions.emplace_back(attribute);
+      }
+      logical_hash_join = L::HashJoin::Create(left,
+                                              right,
+                                              left->getOutputAttributes(),
+                                              right->getOutputAttributes(),
+                                              nullptr /* residual_predicate  */,
+                                              L::HashJoin::JoinType::kLeftSemiJoin);
+      logical_project = L::Project::Create(logical_hash_join,
+                                           project_expressions);
+      P::PhysicalPtr physical_hash_join;
+      addHashJoin(logical_project,
+                  nullptr /* logical_filter  */,
+                  logical_hash_join,
+                  &physical_hash_join);
+      *physical_output = P::Aggregate::Create(physical_hash_join,
+                                              project_expressions,
+                                              {}, /* aggregate_expressions */
+                                              nullptr /* filter_predicate  */);
+      return true;
+    } else {
+      // other kinds of set operations are in OneToOne.cpp
+      return false;
     }
   }
 

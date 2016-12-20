@@ -109,6 +109,7 @@
 #include "query_optimizer/logical/TableGenerator.hpp"
 #include "query_optimizer/logical/TableReference.hpp"
 #include "query_optimizer/logical/TopLevelPlan.hpp"
+#include "query_optimizer/logical/SetOperation.hpp"
 #include "query_optimizer/logical/UpdateTable.hpp"
 #include "query_optimizer/logical/WindowAggregate.hpp"
 #include "query_optimizer/resolver/NameResolver.hpp"
@@ -372,23 +373,23 @@ L::LogicalPtr Resolver::resolve(const ParseStatement &parse_query) {
       }
       break;
     }
-    case ParseStatement::kSelect: {
-      const ParseStatementSelect &select_statement =
-          static_cast<const ParseStatementSelect&>(parse_query);
-      if (select_statement.with_clause() != nullptr) {
-        resolveWithClause(*select_statement.with_clause());
+    case ParseStatement::kSetOperation: {
+      const ParseStatementSetOperation &set_operation_statement =
+          static_cast<const ParseStatementSetOperation&>(parse_query);
+      if (set_operation_statement.with_clause() != nullptr) {
+        resolveWithClause(*set_operation_statement.with_clause());
       }
       logical_plan_ =
-          resolveSelect(*select_statement.select_query(),
-                        "" /* select_name */,
-                        nullptr /* No Type hints */,
-                        nullptr /* parent_resolver */);
-      if (select_statement.with_clause() != nullptr) {
+          resolveSetOperation(*set_operation_statement.set_operation_query(),
+                              "", /* set operation name */
+                              nullptr, /* type hints */
+                              nullptr /* parent resolver*/);
+      if (set_operation_statement.with_clause() != nullptr) {
         // Report an error if there is a WITH query that is not actually used.
         if (!with_queries_info_.unreferenced_query_indexes.empty()) {
           int unreferenced_with_query_index = *with_queries_info_.unreferenced_query_indexes.begin();
           const ParseSubqueryTableReference &unreferenced_with_query =
-              (*select_statement.with_clause())[unreferenced_with_query_index];
+              (*set_operation_statement.with_clause())[unreferenced_with_query_index];
           THROW_SQL_ERROR_AT(&unreferenced_with_query)
               << "WITH query "
               << unreferenced_with_query.table_reference_signature()->table_alias()->value()
@@ -1350,16 +1351,184 @@ L::LogicalPtr Resolver::resolveSelect(
   return logical_plan;
 }
 
+L::LogicalPtr Resolver::resolveSetOperations(
+    const ParseSetOperation &parse_set_operations,
+    const std::string &set_operation_name,
+    const std::vector<const Type*> *type_hints,
+    const NameResolver *parent_resolver) {
+  const PtrList<ParseTreeNode> &operands =
+    parse_set_operations.operands();
+  DCHECK_GT(operands.size(), 1);
+  std::vector<L::LogicalPtr> resolved_operations;
+  std::vector<std::vector<E::AttributeReferencePtr>> attribute_matrix;
+
+  // resolve the first operation, and get the output attributes
+  PtrList<ParseTreeNode>::PtrListConstIterator iter = operands.begin();
+  const ParseSetOperation &operation =
+    static_cast<const ParseSetOperation&>(*iter);
+  L::LogicalPtr operation_logical =
+    resolveSetOperation(operation, set_operation_name, type_hints, parent_resolver);
+  const std::vector<E::AttributeReferencePtr> operation_attributes =
+    operation_logical->getOutputAttributes();
+  attribute_matrix.push_back(operation_attributes);
+  resolved_operations.push_back(operation_logical);
+
+  // resolve the rest operations, and check the size of output attributes
+  ++iter;
+  for (; iter != operands.end(); ++iter) {
+    const ParseSetOperation &current_operation =
+      static_cast<const ParseSetOperation&>(*iter);
+    L::LogicalPtr current_logical =
+      resolveSetOperation(current_operation, set_operation_name, type_hints, parent_resolver);
+    const std::vector<E::AttributeReferencePtr> current_attributes =
+      current_logical->getOutputAttributes();
+    attribute_matrix.push_back(current_attributes);
+
+    // check output attributes size
+    // detailed type check and type cast will perform later
+    if (current_attributes.size() != operation_attributes.size()) {
+      THROW_SQL_ERROR_AT(&current_operation)
+        << "Can not perform " << parse_set_operations.getName()
+        << "opeartion between "<< std::to_string(current_attributes.size())
+        << "and "<<std::to_string(operation_attributes.size())
+        << "columns";
+    }
+
+    resolved_operations.push_back(current_logical);
+  }
+
+  // get the possible output attributes that the attributes of all operands can cast to
+  std::vector<E::AttributeReferencePtr> possible_attributes;
+  for (std::vector<E::NamedExpressionPtr>::size_type aid = 0;
+       aid < operation_attributes.size();
+       ++aid) {
+    E::AttributeReferencePtr possible_attribute = attribute_matrix[0][aid];
+    for (std::vector<L::LogicalPtr>::size_type opid = 1;
+         opid < resolved_operations.size();
+         ++opid) {
+      const Type &current_type = attribute_matrix[opid][aid]->getValueType();
+      const Type &possible_type = possible_attribute->getValueType();
+      if (!possible_type.equals(current_type)) {
+        if (possible_type.getSuperTypeID() == Type::SuperTypeID::kNumeric &&
+            current_type.getSuperTypeID() == Type::SuperTypeID::kNumeric) {
+          if (possible_type.isSafelyCoercibleFrom(current_type)){
+            // cast current_type to possible_type
+            // possible_attribute remain the same, nothing needs to change
+          } else if (current_type.isSafelyCoercibleFrom(possible_type)) {
+            // cast possible_type to current_type
+            possible_attribute = attribute_matrix[opid][aid];
+          } else {
+            // can not cast between possible_type and current_type
+            // throw and SQL error
+            THROW_SQL_ERROR_AT(&parse_set_operations)
+              << "There is not a safely coerce between "
+              << current_type.getName()
+              << "and " << possible_type.getName();
+          }
+        } else {
+          THROW_SQL_ERROR_AT(&parse_set_operations)
+            << "Does not support cast operation between non-numeric types"
+            << current_type.getName()
+            << "and " << possible_type.getName();
+        }
+      }
+    }
+    possible_attributes.push_back(possible_attribute);
+  }
+
+  // apply cast to all operands using possible_attributes
+  for (std::vector<L::LogicalPtr>::size_type opid = 0;
+       opid < resolved_operations.size();
+       ++opid) {
+    bool need_cast = false;
+    for (std::vector<E::NamedExpressionPtr>::size_type aid = 0;
+         aid < operation_attributes.size();
+         ++aid) {
+      const Type &possible_type = possible_attributes[aid]->getValueType();
+      const Type &current_type = attribute_matrix[opid][aid]->getValueType();
+      if (!possible_type.equals(current_type)) {
+        need_cast = true;
+        break;
+      }
+    }
+    if (need_cast) {
+      // generate a cast operation if needed
+      std::vector<E::NamedExpressionPtr> cast_expressions;
+      for (std::vector<E::NamedExpressionPtr>::size_type aid = 0;
+          aid < operation_attributes.size();
+          ++aid) {
+        const Type &possible_type = possible_attributes[aid]->getValueType();
+        const Type &current_type = attribute_matrix[opid][aid]->getValueType();
+        if (possible_type.equals(current_type)) {
+          cast_expressions.emplace_back(attribute_matrix[opid][aid]);
+        } else {
+          const E::AttributeReferencePtr attr = attribute_matrix[opid][aid];
+          const E::ExpressionPtr cast_expr =
+            E::Cast::Create(attr, possible_type);
+          cast_expressions.emplace_back(
+              E::Alias::Create(context_->nextExprId(),
+                               cast_expr,
+                               attr->attribute_name(),
+                               attr->attribute_alias()));
+        }
+      }
+      resolved_operations[opid] = L::Project::Create(resolved_operations[opid], cast_expressions);
+    }
+  }
+
+  // generate the set operation logical node
+  switch (parse_set_operations.getOperationType()) {
+    case ParseSetOperation::kIntersect:
+      return L::SetOperation::Create(resolved_operations, L::SetOperation::kIntersect);
+    case ParseSetOperation::kUnion:
+      return L::SetOperation::Create(resolved_operations, L::SetOperation::kUnion);
+    case ParseSetOperation::kUnionAll:
+      return L::SetOperation::Create(resolved_operations, L::SetOperation::kUnionAll);
+    default:
+      LOG(FATAL) << "Unknown operation: " << parse_set_operations.toString();
+  }
+}
+
+L::LogicalPtr Resolver::resolveSetOperation(
+    const ParseSetOperation &set_operation_query,
+    const std::string &set_operation_name,
+    const std::vector<const Type*> *type_hints,
+    const NameResolver *parent_resolver) {
+  switch (set_operation_query.getOperationType()) {
+    case ParseSetOperation::kIntersect:
+    case ParseSetOperation::kUnion:
+    case ParseSetOperation::kUnionAll: {
+      return resolveSetOperations(set_operation_query,
+                                  set_operation_name,
+                                  type_hints,
+                                  parent_resolver);
+    }
+    case ParseSetOperation::kSingle: {
+      DCHECK_EQ(set_operation_query.operands().size(), 1u);
+      const ParseSelect &select_query =
+        static_cast<const ParseSelect&>(*set_operation_query.operands().begin());
+      return resolveSelect(select_query,
+                          set_operation_name,
+                          type_hints,
+                          parent_resolver);
+    }
+    default:
+      LOG(FATAL) << "Unknown set operation: " << set_operation_query.toString();
+  }
+}
+
 E::SubqueryExpressionPtr Resolver::resolveSubqueryExpression(
     const ParseSubqueryExpression &parse_subquery_expression,
     const std::vector<const Type*> *type_hints,
     ExpressionResolutionInfo *expression_resolution_info,
     const bool has_single_column) {
+
+  // Subquery is now a set operation, not only a select operation
   L::LogicalPtr logical_subquery =
-      resolveSelect(*parse_subquery_expression.query(),
-                    "" /* select_name */,
-                    type_hints,
-                    &expression_resolution_info->name_resolver);
+      resolveSetOperation(*parse_subquery_expression.set_operation(),
+                          "" /* set operation name */,
+                          type_hints,
+                          &expression_resolution_info->name_resolver);
 
   // Raise SQL error if the subquery is expected to return only one column but
   // it returns multiple columns.
@@ -1614,11 +1783,11 @@ L::LogicalPtr Resolver::resolveTableReference(const ParseTableReference &table_r
       DCHECK(reference_signature->table_alias() != nullptr);
 
       reference_alias = reference_signature->table_alias();
-      logical_plan = resolveSelect(
-          *static_cast<const ParseSubqueryTableReference&>(table_reference).subquery_expr()->query(),
+      logical_plan = resolveSetOperation(
+          *static_cast<const ParseSubqueryTableReference&>(table_reference).subquery_expr()->set_operation(),
           reference_alias->value(),
-          nullptr /* No Type hints */,
-          nullptr /* parent_resolver */);
+          nullptr  /* No Type hints */,
+          nullptr  /* parent_resolver */ );
 
       if (reference_signature->column_aliases() != nullptr) {
         logical_plan = RenameOutputColumns(logical_plan, *reference_signature);

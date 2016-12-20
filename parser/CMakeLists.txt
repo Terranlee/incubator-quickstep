@@ -84,6 +84,7 @@ else()
 endif()
 
 # Declare micro-libs:
+add_library(quickstep_parser_ParseAllDistinct ../empty_src.cpp ParseAllDistinct.hpp)
 add_library(quickstep_parser_ParseAssignment ../empty_src.cpp ParseAssignment.hpp)
 add_library(quickstep_parser_ParseAttributeDefinition ParseAttributeDefinition.cpp ParseAttributeDefinition.hpp)
 add_library(quickstep_parser_ParseBasicExpressions ParseBasicExpressions.cpp ParseBasicExpressions.hpp)
@@ -107,6 +108,7 @@ add_library(quickstep_parser_ParsePriority ../empty_src.cpp ParsePriority.hpp)
 add_library(quickstep_parser_ParseSample ParseSample.cpp ParseSample.hpp)
 add_library(quickstep_parser_ParseSelect ../empty_src.cpp ParseSelect.hpp)
 add_library(quickstep_parser_ParseSelectionClause ParseSelectionClause.cpp ParseSelectionClause.hpp)
+add_library(quickstep_parser_ParseSetOperation ../empty_src.cpp ParseSetOperation.hpp)
 add_library(quickstep_parser_ParseSimpleTableReference ParseSimpleTableReference.cpp ParseSimpleTableReference.hpp)
 add_library(quickstep_parser_ParseStatement ../empty_src.cpp ParseStatement.hpp)
 add_library(quickstep_parser_ParseString ParseString.cpp ParseString.hpp)
@@ -121,6 +123,8 @@ add_library(quickstep_parser_SqlParser ${BISON_SqlParser_OUTPUTS})
 add_library(quickstep_parser_SqlLexer ${FLEX_SqlLexer_OUTPUTS})
 
 # Link dependencies:
+target_link_libraries(quickstep_parser_ParseAllDistinct
+                      quickstep_utility_Macros)
 target_link_libraries(quickstep_parser_ParseAssignment
                       quickstep_parser_ParseExpression
                       quickstep_parser_ParseString
@@ -257,6 +261,10 @@ target_link_libraries(quickstep_parser_ParseSelectionClause
                       quickstep_parser_ParseTreeNode
                       quickstep_utility_Macros
                       quickstep_utility_PtrList)
+target_link_libraries(quickstep_parser_ParseSetOperation
+                      quickstep_parser_ParseTreeNode
+                      quickstep_utility_Macros
+                      quickstep_utility_PtrList)
 target_link_libraries(quickstep_parser_ParseSimpleTableReference
                       quickstep_parser_ParseSample
                       quickstep_parser_ParseString
@@ -274,6 +282,7 @@ target_link_libraries(quickstep_parser_ParseStatement
                       quickstep_parser_ParsePredicate
                       quickstep_parser_ParsePriority
                       quickstep_parser_ParseSelect
+                      quickstep_parser_ParseSetOperation
                       quickstep_parser_ParseString
                       quickstep_parser_ParseSubqueryTableReference
                       quickstep_parser_ParseTreeNode
@@ -293,7 +302,7 @@ target_link_libraries(quickstep_parser_ParseKeyValue
 target_link_libraries(quickstep_parser_ParseSubqueryExpression
                       glog
                       quickstep_parser_ParseExpression
-                      quickstep_parser_ParseSelect
+                      quickstep_parser_ParseSetOperation
                       quickstep_utility_Macros)
 target_link_libraries(quickstep_parser_ParseSubqueryTableReference
                       quickstep_parser_ParseSubqueryExpression
@@ -325,6 +334,7 @@ target_link_libraries(quickstep_parser_SqlLexer
                       quickstep_utility_PtrVector)
 target_link_libraries(quickstep_parser_SqlParser
                       quickstep_catalog_PartitionSchemeHeader
+                      quickstep_parser_ParseAllDistinct
                       quickstep_parser_ParseAssignment
                       quickstep_parser_ParseAttributeDefinition
                       quickstep_parser_ParseBasicExpressions
@@ -347,6 +357,7 @@ target_link_libraries(quickstep_parser_SqlParser
                       quickstep_parser_ParseSample
                       quickstep_parser_ParseSelect
                       quickstep_parser_ParseSelectionClause
+                      quickstep_parser_ParseSetOperation
                       quickstep_parser_ParseSimpleTableReference
                       quickstep_parser_ParseStatement
                       quickstep_parser_ParseString
@@ -403,6 +414,7 @@ add_subdirectory(tests)
 # Module all-in-one library:
 add_library(quickstep_parser ../empty_src.cpp ParserModule.hpp)
 target_link_libraries(quickstep_parser
+                      quickstep_parser_ParseAllDistinct
                       quickstep_parser_ParseAssignment
                       quickstep_parser_ParseAttributeDefinition
                       quickstep_parser_ParseBasicExpressions
@@ -426,6 +438,7 @@ target_link_libraries(quickstep_parser
                       quickstep_parser_ParseSample
                       quickstep_parser_ParseSelect
                       quickstep_parser_ParseSelectionClause
+                      quickstep_parser_ParseSetOperation
                       quickstep_parser_ParseSimpleTableReference
                       quickstep_parser_ParseStatement
                       quickstep_parser_ParseString

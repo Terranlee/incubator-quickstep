@@ -102,10 +102,10 @@ P::PhysicalPtr PhysicalGenerator::generateInitialPlan(
   // Choose the first generated physical plan as the best one.
   P::PhysicalPtr physical_plan;
   for (std::unique_ptr<S::Strategy> &strategy : strategies_) {
-    DVLOG(5) << "Apply strategy " << strategy->getName() << " to "
+    std::cerr << "Apply strategy " << strategy->getName() << " to "
              << logical_plan->getShortString();
     if (strategy->generatePlan(logical_plan, &physical_plan)) {
-      DVLOG(5) << "Result:\n" << physical_plan->toString();
+      std::cerr << "Result:\n" << physical_plan->toString();
       break;
     }
   }
@@ -160,12 +160,13 @@ P::PhysicalPtr PhysicalGenerator::optimizePlan() {
   }
 
   for (std::unique_ptr<Rule<P::Physical>> &rule : rules) {
+    std::cerr<< "Apply rule "<< rule->getName() <<std::endl;
     physical_plan_ = rule->apply(physical_plan_);
-    DVLOG(5) << "After applying rule " << rule->getName() << ":\n"
+    std::cerr << "After applying rule " << rule->getName() << ":\n"
              << physical_plan_->toString();
   }
 
-  DVLOG(4) << "Optimized physical plan:\n" << physical_plan_->toString();
+  std::cerr << "Optimized physical plan:\n" << physical_plan_->toString();
 
   if (FLAGS_visualize_plan) {
     quickstep::PlanVisualizer plan_visualizer;

@@ -35,6 +35,7 @@
 #include "query_optimizer/logical/InsertTuple.hpp"
 #include "query_optimizer/logical/LogicalType.hpp"
 #include "query_optimizer/logical/Sample.hpp"
+#include "query_optimizer/logical/SetOperation.hpp"
 #include "query_optimizer/logical/SharedSubplanReference.hpp"
 #include "query_optimizer/logical/Sort.hpp"
 #include "query_optimizer/logical/TableGenerator.hpp"
@@ -42,6 +43,7 @@
 #include "query_optimizer/logical/TopLevelPlan.hpp"
 #include "query_optimizer/logical/UpdateTable.hpp"
 #include "query_optimizer/logical/WindowAggregate.hpp"
+#include "query_optimizer/physical/Aggregate.hpp"
 #include "query_optimizer/physical/CopyFrom.hpp"
 #include "query_optimizer/physical/CreateIndex.hpp"
 #include "query_optimizer/physical/CreateTable.hpp"
@@ -55,6 +57,7 @@
 #include "query_optimizer/physical/TableGenerator.hpp"
 #include "query_optimizer/physical/TableReference.hpp"
 #include "query_optimizer/physical/TopLevelPlan.hpp"
+#include "query_optimizer/physical/UnionAll.hpp"
 #include "query_optimizer/physical/UpdateTable.hpp"
 #include "query_optimizer/physical/WindowAggregate.hpp"
 
@@ -163,6 +166,32 @@ bool OneToOne::generatePlan(const L::LogicalPtr &logical_input,
           sample->is_block_sample(),
           sample->percentage());
       return true;
+    }
+    case L::LogicalType::kSetOperation: {
+      const L::SetOperationPtr set_operation =
+          std::static_pointer_cast<const L::SetOperation>(logical_input);
+      std::vector<P::PhysicalPtr> physical_operands;
+      for (const L::LogicalPtr &logical : set_operation->getOperands()) {
+        physical_operands.push_back(physical_mapper_->createOrGetPhysicalFromLogical(logical));
+      }
+      if (set_operation->getSetOperationType() == L::SetOperation::kUnionAll) {
+        *physical_output = P::UnionAll::Create(physical_operands);
+        return true;
+      } else if (set_operation->getSetOperationType() == L::SetOperation::kUnion) {
+        P::PhysicalPtr union_all =
+          P::UnionAll::Create(physical_operands);
+        std::vector<E::NamedExpressionPtr> group_by_expressions;
+        for (const auto & attribute : set_operation->getOutputAttributes()) {
+          group_by_expressions.emplace_back(attribute);
+        }
+        *physical_output = P::Aggregate::Create(union_all,
+                                                group_by_expressions,
+                                                {}, /* aggregate_expression  */
+                                                nullptr /* filter_predicate  */);
+        return true;
+      } else {
+        return false;
+      }
     }
     case L::LogicalType::kSort: {
       const L::Sort *sort =

@@ -17,49 +17,41 @@
  * under the License.
  **/
 
-#ifndef QUICKSTEP_QUERY_OPTIMIZER_LOGICAL_LOGICAL_TYPE_HPP_
-#define QUICKSTEP_QUERY_OPTIMIZER_LOGICAL_LOGICAL_TYPE_HPP_
+#ifndef QUICKSTEP_PARSER_PARSE_ALL_DISTINCT_HPP_
+#define QUICKSTEP_PARSER_PARSE_ALL_DISTINCT_HPP_
 
-namespace quickstep {
-namespace optimizer {
-namespace logical {
+#include "utility/Macros.hpp"
 
-/** \addtogroup OptimizerExpressions
+namespace quickstep{
+
+/** \addtogroup Parser
  *  @{
- */
+*/
 
-/**
- * @brief Optimizer logical node types.
- **/
-enum class LogicalType {
-  kAggregate,
-  kCopyFrom,
-  kCreateIndex,
-  kCreateTable,
-  kDeleteTuples,
-  kDropTable,
-  kFilter,
-  kHashJoin,
-  kInsertSelection,
-  kInsertTuple,
-  kMultiwayCartesianJoin,
-  kNestedLoopsJoin,
-  kProject,
-  kSample,
-  kSetOperation,
-  kSharedSubplanReference,
-  kSort,
-  kTableGenerator,
-  kTableReference,
-  kTopLevelPlan,
-  kUpdateTable,
-  kWindowAggregate
+class ParseAllDistinct{
+public:
+  enum AllDistinctType{
+    kAll,
+    kDistinct,
+    kUnknown
+  };
+
+  ParseAllDistinct(const AllDistinctType type)
+    : type_(type) {
+  }
+
+  const AllDistinctType getType() {
+    return type_;
+  }
+
+private:
+  AllDistinctType type_;
+
+  DISALLOW_COPY_AND_ASSIGN(ParseAllDistinct);
 };
 
 /** @} */
 
-}  // namespace logical
-}  // namespace optimizer
 }  // namespace quickstep
 
-#endif /* QUICKSTEP_QUERY_OPTIMIZER_LOGICAL_LOGICAL_TYPE_HPP_ */
+#endif /* QUICKSTEP_PARSER_PARSE_ALL_DISTINCT_HPP_ */
