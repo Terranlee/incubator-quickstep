@@ -87,6 +87,7 @@ class RelationalOperator {
     kTableGenerator,
     kTextScan,
     kUpdate,
+    kUnionAll,
     kWindowAggregation,
     kMockOperator
   };

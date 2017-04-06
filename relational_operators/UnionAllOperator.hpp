@@ -94,32 +94,17 @@ class UnionAllOperator : public RelationalOperator {
                                            : std::vector<block_id>());
       num_workorders_generated_.push_back(0);
 
-      // initialize block_ids and num_workorders with partition
-      if (input_relations[i]->hasPartitionScheme()) {
-        const PartitionScheme &part_scheme = input_relations[i]->getPartitionScheme();
-        const PartitionSchemeHeader &part_scheme_header = part_scheme.getPartitionSchemeHeader();
-        const std::size_t num_partitions = part_scheme_header.getNumPartitions();
-
-        input_relations_block_ids_in_partition_.push_back(std::vector<std::vector<block_id>>(num_partitions));
-        num_workorders_generated_in_partition_.push_back(std::vector<std::size_t>(num_partitions, 0));
-
-        std::vector<std::vector<block_id>>& partition = input_relations_block_ids_in_partition_.back();
-        for (std::size_t part_id=0; part_id<num_partitions; part_id++) {
-          if (input_relation_is_stored[i]) {
-            partition[part_id] = part_scheme.getBlocksInPartition(part_id);
-          }  else {
-            partition[part_id] = std::vector<block_id>();
-          }
-        }
-      } else {
-        // if does not have PartitionScheme, push back an empty vector
-        input_relations_block_ids_in_partition_.push_back(std::vector<std::vector<block_id>>());
-        num_workorders_generated_in_partition_.push_back(std::vector<std::size_t>());
-      }
+      // if does not have PartitionScheme, push back an empty vector
+      input_relations_block_ids_in_partition_.push_back(std::vector<std::vector<block_id>>());
+      num_workorders_generated_in_partition_.push_back(std::vector<std::size_t>());
     }
   }
 
   ~UnionAllOperator() override {}
+
+  OperatorType getOperatorType() const override {
+    return kUnionAll;  
+  }
 
   std::string getName() const override {
     return "UnionAll";
@@ -142,10 +127,8 @@ class UnionAllOperator : public RelationalOperator {
   }
 
   void feedInputBlock(const block_id input_block_id,
-                      const relation_id input_relation_id) override;
-
-  void feedInputBlocks(const relation_id input_relation_id,
-                      std::vector<block_id> *input_block_ids) override;
+                      const relation_id input_relation_id,
+                      const partition_id part_id) override;
 
   void doneFeedingInputBlocks(const relation_id rel_id) override;
 
