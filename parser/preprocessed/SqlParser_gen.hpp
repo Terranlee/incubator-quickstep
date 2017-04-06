@@ -186,11 +186,7 @@ extern int quickstep_yydebug;
 
 union YYSTYPE
 {
-<<<<<<< HEAD
-#line 120 "../SqlParser.ypp" /* yacc.c:1915  */
-=======
 #line 122 "../SqlParser.ypp" /* yacc.c:1909  */
->>>>>>> Implement Union operator
 
   quickstep::ParseString *string_value_;
 
@@ -294,11 +290,7 @@ union YYSTYPE
 
   quickstep::ParsePriority *opt_priority_clause_;
 
-<<<<<<< HEAD
-#line 288 "SqlParser_gen.hpp" /* yacc.c:1915  */
-=======
 #line 294 "SqlParser_gen.hpp" /* yacc.c:1909  */
->>>>>>> Implement Union operator
 };
 
 typedef union YYSTYPE YYSTYPE;
